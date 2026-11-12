@@ -1017,10 +1017,12 @@ From `filename#section' keep only the `filename'."
   (replace-regexp-in-string "#.*$" "" s))
 
 (defun obsidian--extension (f)
-  "Add extension to wiki link F if none."
-  (if (file-name-extension f)
-      f
-    (s-concat (obsidian--remove-section f) ".md")))
+  "Add extension to wiki link F if none.
+A period followed by spaces, as in `Prof. Dr. Name', is not an extension."
+  (let ((f (obsidian--remove-section f)))
+    (if (string-match-p "\\.[[:alnum:]]+\\'" f)
+        f
+      (s-concat f ".md"))))
 
 (defun obsidian-follow-wiki-link-at-point (&optional arg)
   "Find Wiki Link at point.  Opens wiki links in other window if ARG is non-nil."
@@ -1032,9 +1034,23 @@ From `filename#section' keep only the `filename'."
                         (match-string-no-properties 3)))))
     (if (s-contains-p ":" url)
         (browse-url url)
-      (let ((prepped-path (obsidian--extension (s-replace "%20" " " url))))
+      ;; `file#heading', `#heading' (same file) or `file#h1#h2' (last wins)
+      (let* ((parts (split-string (s-replace "%20" " " url) "#"))
+             (file (car parts))
+             (heading (car (last (cdr parts)))))
         (push (point-marker) obsidian--jump-list)
-        (obsidian-find-point-in-file prepped-path 0 arg)))))
+        (unless (string-empty-p file)
+          (obsidian-find-point-in-file (obsidian--extension file) 0 arg))
+        (when heading (obsidian--goto-heading heading))))))
+
+(defun obsidian--goto-heading (heading)
+  "Move to the markdown HEADING in the current buffer, if it exists."
+  (when-let* ((pos (save-excursion
+                    (goto-char (point-min))
+                    (re-search-forward
+                     (concat "^#+[ \t]+" (regexp-quote heading) "[ \t]*$") nil t))))
+    (goto-char pos)
+    (beginning-of-line)))
 
 (defun obsidian-follow-markdown-link-at-point (&optional arg)
   "Find and follow markdown link at point.
